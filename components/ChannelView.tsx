@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   CheckCircle2, Camera, Loader2, Play, Eye, Clock, X, 
@@ -211,7 +210,7 @@ const ChannelView: React.FC<ChannelViewProps> = ({
       const s = [...seriesList];
       if (seriesSort === 'recent') return s.sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
       if (seriesSort === 'oldest') return s.sort((a,b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-      if (seriesSort === 'popular') return s.sort((a,b) => (b.views_count || 0) - (a.views_count || 0));
+      if (seriesSort === 'popular') return s.sort((a,b) => (b.likes_count || 0) - (a.likes_count || 0));
       return s;
   };
 

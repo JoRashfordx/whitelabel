@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { WhitelabelConfig, WhitelabelPage } from '../../types';
 import { getSupabase } from '../../services/supabase';
@@ -19,7 +18,7 @@ export const SiteLayout: React.FC<Props> = ({ config }) => {
     document.documentElement.style.setProperty('--primary', config.primary_color);
     document.documentElement.style.setProperty('--bg-color', config.bg_color);
     document.documentElement.style.setProperty('--text-color', config.text_color);
-    document.title = config.site_name;
+    document.title = config.platform_name;
   }, [config]);
 
   useEffect(() => {
@@ -43,7 +42,7 @@ export const SiteLayout: React.FC<Props> = ({ config }) => {
       {/* Header */}
       <header className="border-b border-white/10 px-6 py-4 flex items-center justify-between sticky top-0 bg-opacity-90 backdrop-blur-md z-50" style={{ backgroundColor: config.bg_color }}>
         <div className="flex items-center gap-3">
-          {config.logo_url ? <img src={config.logo_url} className="h-8" /> : <div className="text-xl font-black">{config.site_name}</div>}
+          {config.logo_url ? <img src={config.logo_url} className="h-8" /> : <div className="text-xl font-black">{config.platform_name}</div>}
         </div>
         <nav className="hidden md:flex gap-6 font-medium text-sm">
           <a href="#" className="hover:text-primary">Home</a>

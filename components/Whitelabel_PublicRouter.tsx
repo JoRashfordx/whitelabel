@@ -4,6 +4,7 @@ import { wlSchema } from '../services/supabase';
 import { Whitelabel_Config, Whitelabel_Page } from '../types';
 import { useAuth } from '../hooks/useAuth';
 import { User, LogIn } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 
 interface Props {
     config: Whitelabel_Config;
@@ -14,11 +15,13 @@ export const Whitelabel_PublicRouter: React.FC<Props> = ({ config }) => {
     const { user } = useAuth();
 
     useEffect(() => {
+        if (!config) return;
+        
         // Apply styling
-        document.documentElement.style.setProperty('--primary', config.primary_color);
-        document.documentElement.style.setProperty('--bg-color', config.bg_color);
-        document.documentElement.style.setProperty('--text-color', config.text_color);
-        document.title = config.platform_name;
+        if (config.primary_color) document.documentElement.style.setProperty('--primary', config.primary_color);
+        if (config.bg_color) document.documentElement.style.setProperty('--bg-color', config.bg_color);
+        if (config.text_color) document.documentElement.style.setProperty('--text-color', config.text_color);
+        if (config.platform_name) document.title = config.platform_name;
 
         // Load Homepage
         wlSchema().from('pages').select('*').eq('is_home', true).single().then(({ data }) => {
@@ -26,7 +29,9 @@ export const Whitelabel_PublicRouter: React.FC<Props> = ({ config }) => {
         });
     }, [config]);
 
-    if (!page) return <div className="min-h-screen bg-black text-white flex items-center justify-center">Loading...</div>;
+    if (!config) return <div className="min-h-screen bg-black flex items-center justify-center text-red-500">Configuration Missing</div>;
+
+    if (!page) return <div className="min-h-screen bg-black text-white flex items-center justify-center"><Loader2 className="animate-spin w-8 h-8 text-blue-600" /></div>;
 
     return (
         <div className="min-h-screen flex flex-col" style={{ backgroundColor: config.bg_color, color: config.text_color }}>
@@ -75,6 +80,19 @@ export const Whitelabel_PublicRouter: React.FC<Props> = ({ config }) => {
                         {block.type === 'text_block' && (
                             <section className="py-20 px-6 max-w-4xl mx-auto text-lg leading-relaxed opacity-80">
                                 {block.content.content}
+                            </section>
+                        )}
+                        {block.type === 'features' && (
+                            <section className="py-20 px-6 bg-white/5">
+                                <h2 className="text-center text-3xl font-bold mb-12">{block.content.title}</h2>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto">
+                                    {[1,2,3].map(i => (
+                                        <div key={i} className="p-6 border border-white/10 rounded">
+                                            <h3 className="font-bold text-xl mb-2">Feature {i}</h3>
+                                            <p className="opacity-70">Description of this awesome feature goes here.</p>
+                                        </div>
+                                    ))}
+                                </div>
                             </section>
                         )}
                     </div>
