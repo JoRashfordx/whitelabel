@@ -52,18 +52,16 @@ export const checkIsInstalled = async (): Promise<boolean> => {
   try {
     if (!isConfigured()) return false;
     
-    // Check the install_state table directly
-    const { data, error } = await wlSchema()
-      .from('install_state')
-      .select('installed')
-      .maybeSingle();
-
+    // Use RPC to bypass schema visibility issues
+    const { data, error } = await getSupabase().rpc('check_install_status');
+    
     if (error) {
-      console.warn("Install check error (likely table missing):", error.message);
+      console.warn("Install check via RPC failed:", error.message);
+      // Fallback: If RPC missing, we are definitely not installed or schema is missing
       return false;
     }
 
-    const isInstalled = data?.installed === true;
+    const isInstalled = data === true;
     if (isInstalled) console.log("System Status: INSTALLED");
     return isInstalled;
   } catch (e) {

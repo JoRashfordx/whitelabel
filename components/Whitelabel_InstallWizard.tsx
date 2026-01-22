@@ -54,53 +54,32 @@ export const Whitelabel_InstallWizard = ({ onComplete }: { onComplete: () => voi
       addLog('Verifying installation...');
       
       try {
-          // Check connection with Service key to write install state
+          // Check connection with Service key
           const adminClient = createClient(config.url, config.service);
 
-          // 1. Verify Schema by checking install_state table existence
-          const { error: tableError } = await adminClient.schema('whitelabel').from('install_state').select('*').limit(1);
+          // 1. Attempt to call the complete_install RPC
+          // This verifies the SQL was run (because the function exists) AND finalizes the table.
+          addLog('Finalizing Install State...');
           
-          if (tableError) {
-              throw new Error(`Schema check failed: ${tableError.message}. Did you run the SQL?`);
+          const { error: rpcError } = await adminClient.rpc('complete_install', {
+              p_admin_email: config.adminEmail,
+              p_platform_name: config.platformName
+          });
+
+          if (rpcError) {
+              throw new Error(`Migration check failed: ${rpcError.message}. Did you run the SQL in step 2?`);
           }
 
-          // 2. Fetch Admin User ID
-          const { data: { users } } = await adminClient.auth.admin.listUsers();
-          const adminUser = users.find(u => u.email === config.adminEmail);
+          // 2. Double check verify via public RPC
+          const { data: verifyData } = await adminClient.rpc('check_install_status');
           
-          if (!adminUser) throw new Error("Admin user not found in Auth. Please restart setup.");
-
-          // 3. Register Admin Profile
-          await adminClient.schema('whitelabel').from('profiles').upsert({
-              id: adminUser.id,
-              username: 'admin',
-              role: 'admin'
-          });
-          
-          await adminClient.schema('whitelabel').from('admins').upsert({
-              user_id: adminUser.id,
-              email: config.adminEmail
-          });
-
-          // 4. WRITE INSTALL STATE (CRITICAL)
-          addLog('Writing install state...');
-          
-          // Using upsert with explicit ID true to ensure singleton
-          const { error: installError } = await adminClient.schema('whitelabel').from('install_state').upsert({
-              id: true,
-              installed: true,
-              admin_user_id: adminUser.id,
-              platform_name: config.platformName,
-              installed_at: new Date().toISOString()
-          });
-
-          if (installError) {
-              throw new Error(`Failed to write install state: ${installError.message}`);
+          if (verifyData !== true) {
+              throw new Error("Verification returned false even after finalization. Check database logs.");
           }
 
-          addLog('Install state written.');
+          addLog('Install state confirmed.');
 
-          // 5. Save Credentials locally
+          // 3. Save Credentials locally
           localStorage.setItem('wl_supabase_url', config.url);
           localStorage.setItem('wl_supabase_anon', config.anon);
 

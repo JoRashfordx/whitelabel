@@ -1,6 +1,6 @@
 
 export const generateMigrationSQL = () => `
--- FULL WHITELABEL ISOLATION
+-- FULL WHITELABEL ISOLATION & INSTALL FIX
 -- Run in Supabase SQL Editor
 
 BEGIN;
@@ -104,7 +104,6 @@ CREATE POLICY "Admin Write Config" ON whitelabel.config FOR ALL USING (
 ALTER TABLE whitelabel.profiles ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public Read Profiles" ON whitelabel.profiles FOR SELECT USING (true);
 CREATE POLICY "Self Update Profiles" ON whitelabel.profiles FOR UPDATE USING (auth.uid() = id);
--- Allow service role to manage profiles (for auth triggers)
 CREATE POLICY "Service Manage Profiles" ON whitelabel.profiles FOR ALL TO service_role USING (true);
 
 ALTER TABLE whitelabel.admins ENABLE ROW LEVEL SECURITY;
@@ -145,6 +144,57 @@ DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE PROCEDURE whitelabel.handle_new_user();
+
+-- INSTALLATION HELPER FUNCTIONS (Bypass Schema Exposure) --
+
+-- 1. Check Install Status (Publicly Accessible)
+CREATE OR REPLACE FUNCTION public.check_install_status()
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    is_installed boolean;
+BEGIN
+    SELECT installed INTO is_installed FROM whitelabel.install_state WHERE id = true;
+    RETURN COALESCE(is_installed, false);
+EXCEPTION WHEN OTHERS THEN
+    RETURN false;
+END;
+$$;
+
+-- 2. Complete Installation (Admin/Service Role Only)
+CREATE OR REPLACE FUNCTION public.complete_install(
+  p_admin_email text,
+  p_platform_name text
+) RETURNS void AS $$
+DECLARE
+  v_user_id uuid;
+BEGIN
+  -- Look up user ID from Auth (Secure)
+  SELECT id INTO v_user_id FROM auth.users WHERE email = p_admin_email;
+  
+  IF v_user_id IS NOT NULL THEN
+    -- Upsert Profile
+    INSERT INTO whitelabel.profiles (id, username, role) 
+    VALUES (v_user_id, 'admin', 'admin') 
+    ON CONFLICT (id) DO UPDATE SET role = 'admin';
+    
+    -- Upsert Admin
+    INSERT INTO whitelabel.admins (user_id, email)
+    VALUES (v_user_id, p_admin_email)
+    ON CONFLICT (user_id) DO NOTHING;
+    
+    -- Set Install State
+    INSERT INTO whitelabel.install_state (id, installed, admin_user_id, platform_name)
+    VALUES (true, true, v_user_id, p_platform_name)
+    ON CONFLICT (id) DO UPDATE SET 
+        installed = true,
+        admin_user_id = EXCLUDED.admin_user_id,
+        platform_name = EXCLUDED.platform_name;
+  END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- INITIAL SEED --
 INSERT INTO whitelabel.config (platform_name) VALUES ('Whitelabel Video') ON CONFLICT DO NOTHING;
