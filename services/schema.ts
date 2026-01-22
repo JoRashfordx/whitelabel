@@ -1,13 +1,13 @@
 
 export const generateMigrationSQL = () => `
--- FULL WHITELABEL ISOLATION & INSTALL FIX
+-- FULL WHITELABEL ISOLATION & INSTALL FIX (v2)
 -- Run in Supabase SQL Editor
 
 BEGIN;
 
 CREATE SCHEMA IF NOT EXISTS whitelabel;
 
--- 1. Install State (Critical for routing)
+-- 1. Install State
 CREATE TABLE IF NOT EXISTS whitelabel.install_state (
   id boolean PRIMARY KEY DEFAULT true,
   installed boolean NOT NULL DEFAULT false,
@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS whitelabel.config (
     updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 3. Profiles (Extends Auth, Isolated)
+-- 3. Profiles
 CREATE TABLE IF NOT EXISTS whitelabel.profiles (
     id UUID PRIMARY KEY, -- Matches auth.users.id
     username TEXT,
@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS whitelabel.profiles (
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 4. Admins (RBAC)
+-- 4. Admins (FIXED: Added UNIQUE constraint to user_id)
 CREATE TABLE IF NOT EXISTS whitelabel.admins (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES whitelabel.profiles(id) ON DELETE CASCADE,
@@ -49,7 +49,17 @@ CREATE TABLE IF NOT EXISTS whitelabel.admins (
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 5. Pages (CMS)
+-- REPAIR: Ensure user_id is unique if table already exists from previous run
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'whitelabel_admins_user_id_key'
+    ) THEN
+        ALTER TABLE whitelabel.admins ADD CONSTRAINT whitelabel_admins_user_id_key UNIQUE (user_id);
+    END IF;
+END $$;
+
+-- 5. Pages
 CREATE TABLE IF NOT EXISTS whitelabel.pages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     slug TEXT UNIQUE NOT NULL,
@@ -96,41 +106,53 @@ DROP POLICY IF EXISTS "Service Write Install State" ON whitelabel.install_state;
 CREATE POLICY "Service Write Install State" ON whitelabel.install_state FOR ALL TO service_role USING (true);
 
 ALTER TABLE whitelabel.config ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public Read Config" ON whitelabel.config;
 CREATE POLICY "Public Read Config" ON whitelabel.config FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Admin Write Config" ON whitelabel.config;
 CREATE POLICY "Admin Write Config" ON whitelabel.config FOR ALL USING (
     EXISTS (SELECT 1 FROM whitelabel.admins WHERE user_id = auth.uid())
 );
 
 ALTER TABLE whitelabel.profiles ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public Read Profiles" ON whitelabel.profiles;
 CREATE POLICY "Public Read Profiles" ON whitelabel.profiles FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Self Update Profiles" ON whitelabel.profiles;
 CREATE POLICY "Self Update Profiles" ON whitelabel.profiles FOR UPDATE USING (auth.uid() = id);
+DROP POLICY IF EXISTS "Service Manage Profiles" ON whitelabel.profiles;
 CREATE POLICY "Service Manage Profiles" ON whitelabel.profiles FOR ALL TO service_role USING (true);
 
 ALTER TABLE whitelabel.admins ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public Read Admins" ON whitelabel.admins;
 CREATE POLICY "Public Read Admins" ON whitelabel.admins FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Service Manage Admins" ON whitelabel.admins;
 CREATE POLICY "Service Manage Admins" ON whitelabel.admins FOR ALL TO service_role USING (true);
 
 ALTER TABLE whitelabel.pages ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public Read Pages" ON whitelabel.pages;
 CREATE POLICY "Public Read Pages" ON whitelabel.pages FOR SELECT USING (
     is_published = true OR EXISTS (SELECT 1 FROM whitelabel.admins WHERE user_id = auth.uid())
 );
+DROP POLICY IF EXISTS "Admin Manage Pages" ON whitelabel.pages;
 CREATE POLICY "Admin Manage Pages" ON whitelabel.pages FOR ALL USING (
     EXISTS (SELECT 1 FROM whitelabel.admins WHERE user_id = auth.uid())
 );
 
 ALTER TABLE whitelabel.videos ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public Read Videos" ON whitelabel.videos;
 CREATE POLICY "Public Read Videos" ON whitelabel.videos FOR SELECT USING (
     visibility = 'public' OR auth.uid() = user_id OR EXISTS (SELECT 1 FROM whitelabel.admins WHERE user_id = auth.uid())
 );
+DROP POLICY IF EXISTS "Creator Manage Videos" ON whitelabel.videos;
 CREATE POLICY "Creator Manage Videos" ON whitelabel.videos FOR ALL USING (auth.uid() = user_id);
 
 ALTER TABLE whitelabel.comments ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public Read Comments" ON whitelabel.comments;
 CREATE POLICY "Public Read Comments" ON whitelabel.comments FOR SELECT USING (true);
+DROP POLICY IF EXISTS "User Create Comments" ON whitelabel.comments;
 CREATE POLICY "User Create Comments" ON whitelabel.comments FOR INSERT WITH CHECK (auth.uid() = user_id);
 
 -- TRIGGERS & FUNCTIONS --
 
--- Auto-create profile on auth signup
 CREATE OR REPLACE FUNCTION whitelabel.handle_new_user()
 RETURNS trigger AS $$
 BEGIN
@@ -145,9 +167,8 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE PROCEDURE whitelabel.handle_new_user();
 
--- INSTALLATION HELPER FUNCTIONS (Bypass Schema Exposure) --
+-- INSTALLATION HELPER FUNCTIONS --
 
--- 1. Check Install Status (Publicly Accessible)
 CREATE OR REPLACE FUNCTION public.check_install_status()
 RETURNS boolean
 LANGUAGE plpgsql
@@ -163,7 +184,6 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
--- 2. Complete Installation (Admin/Service Role Only)
 CREATE OR REPLACE FUNCTION public.complete_install(
   p_admin_email text,
   p_platform_name text
@@ -171,21 +191,18 @@ CREATE OR REPLACE FUNCTION public.complete_install(
 DECLARE
   v_user_id uuid;
 BEGIN
-  -- Look up user ID from Auth (Secure)
   SELECT id INTO v_user_id FROM auth.users WHERE email = p_admin_email;
   
   IF v_user_id IS NOT NULL THEN
-    -- Upsert Profile
     INSERT INTO whitelabel.profiles (id, username, role) 
     VALUES (v_user_id, 'admin', 'admin') 
     ON CONFLICT (id) DO UPDATE SET role = 'admin';
     
-    -- Upsert Admin
+    -- Now safe to use ON CONFLICT because unique constraint exists
     INSERT INTO whitelabel.admins (user_id, email)
     VALUES (v_user_id, p_admin_email)
     ON CONFLICT (user_id) DO NOTHING;
     
-    -- Set Install State
     INSERT INTO whitelabel.install_state (id, installed, admin_user_id, platform_name)
     VALUES (true, true, v_user_id, p_platform_name)
     ON CONFLICT (id) DO UPDATE SET 
