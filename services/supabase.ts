@@ -19,8 +19,8 @@ export const getSupabase = (): SupabaseClient => {
   if (supabaseInstance) return supabaseInstance;
 
   // Priority: 1. LocalStorage (Installer), 2. Env Vars
-  const storedUrl = typeof localStorage !== 'undefined' ? localStorage.getItem('wl_supabase_url') : null;
-  const storedKey = typeof localStorage !== 'undefined' ? localStorage.getItem('wl_supabase_anon') : null;
+  const storedUrl = typeof localStorage !== 'undefined' ? localStorage.getItem('https://hqnggpksgpulhyxqzyfr.supabase.co') : null;
+  const storedKey = typeof localStorage !== 'undefined' ? localStorage.getItem('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhxbmdncGtzZ3B1bGh5eHF6eWZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkwNzUzNjAsImV4cCI6MjA4NDY1MTM2MH0.XZEvb6jjHD2RITFDCJ0sGu-qroG6Rr_n3xg33-rIhhA') : null;
 
   const envUrl = getEnv('VITE_SUPABASE_URL');
   const envKey = getEnv('VITE_SUPABASE_ANON_KEY');
@@ -40,7 +40,7 @@ export const getSupabase = (): SupabaseClient => {
 export const supabase = getSupabase();
 
 export const isConfigured = () => {
-  const storedUrl = typeof localStorage !== 'undefined' ? localStorage.getItem('wl_supabase_url') : null;
+  const storedUrl = typeof localStorage !== 'undefined' ? localStorage.getItem('https://hqnggpksgpulhyxqzyfr.supabase.co') : null;
   const envUrl = getEnv('VITE_SUPABASE_URL');
   return !!(storedUrl || envUrl);
 };
